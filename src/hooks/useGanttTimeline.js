@@ -20,9 +20,10 @@ function safeParseISO(str) {
  *
  * @param {Array}  activities  – filtered list for one project
  * @param {'weeks'|'months'|'years'} scale
+ * @param {number} containerWidth – available width for timeline columns
  * @returns {{ columns, timelineStart, totalWidth, dateToX, spanToWidth, cellWidth }}
  */
-export function useGanttTimeline(activities, scale = 'weeks') {
+export function useGanttTimeline(activities, scale = 'weeks', containerWidth = 0) {
   return useMemo(() => {
     // ── Derive overall date range from BOTH plan AND actual dates ─────────
     const allDates = activities.flatMap((a) =>
@@ -32,7 +33,7 @@ export function useGanttTimeline(activities, scale = 'weeks') {
     );
 
     if (allDates.length === 0) {
-      return { columns: [], timelineStart: new Date(), totalWidth: 0, dateToX: () => 0, spanToWidth: () => 0, cellWidth: CELL_WIDTH[scale] };
+      return { columns: [], timelineStart: new Date(), totalWidth: containerWidth || 0, dateToX: () => 0, spanToWidth: () => 0, cellWidth: CELL_WIDTH[scale] };
     }
 
     const dataMin = min(allDates);
@@ -58,7 +59,7 @@ export function useGanttTimeline(activities, scale = 'weeks') {
 
     // ── Generate column descriptors ───────────────────────────────────────
     let columns = [];
-    const cw = CELL_WIDTH[scale];
+    let cw = CELL_WIDTH[scale]; // Default cell width
 
     if (scale === 'weeks') {
       const weeks = eachWeekOfInterval(
@@ -111,7 +112,14 @@ export function useGanttTimeline(activities, scale = 'weeks') {
       });
     }
 
-    const totalWidth = columns.length * cw;
+    // ── Calculate dynamic column width if containerWidth is provided ──────
+    if (containerWidth > 0 && columns.length > 0) {
+      cw = Math.max(CELL_WIDTH[scale], containerWidth / columns.length);
+      // Update all column widths
+      columns = columns.map(col => ({ ...col, width: cw }));
+    }
+    
+    const totalWidth = containerWidth > 0 ? Math.max(containerWidth, columns.length * cw) : columns.length * cw;
 
     // ── Coordinate helpers ────────────────────────────────────────────────
     const totalDays = differenceInCalendarDays(timelineEnd, timelineStart) + 1;
@@ -133,5 +141,5 @@ export function useGanttTimeline(activities, scale = 'weeks') {
     }
 
     return { columns, timelineStart, timelineEnd, totalWidth, dateToX, spanToWidth, cellWidth: cw, pxPerDay };
-  }, [activities, scale]);
+  }, [activities, scale, containerWidth]);
 }

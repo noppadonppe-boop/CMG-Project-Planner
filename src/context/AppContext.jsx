@@ -320,19 +320,24 @@ function rollUpParent(allActivities, parentId) {
   const actualFinishes = children.map((c) => c.actualFinish).filter(Boolean).sort();
   const allActualFinished = children.every((c) => c.actualFinish);
 
-  // Weight roll-up: effectiveWeight = baseWeight × (sum of sub weights / 100)
-  // baseWeight is the weight the user originally set on the main activity before any sub was added.
-  // We store it as `baseWeight` on the parent; fall back to current weight if not set.
+  // Weight calculation: displayed weight = mainweight × (sum of subweights / 100)
+  // mainweight is the manually set weight for the main activity
+  // subweights are the individual weights of sub-activities (should total 100%)
   const sumSubWeights = +children.reduce((s, c) => s + (c.weight || 0), 0).toFixed(4);
 
   const updated = allActivities.map((a) => {
     if (a.id !== parentId) return a;
-    const base = a.baseWeight !== undefined ? a.baseWeight : a.weight;
-    const effectiveWeight = +(base * (sumSubWeights / 100)).toFixed(4);
+    
+    // Store the manually set weight as mainweight if not already stored
+    const mainweight = a.mainweight !== undefined ? a.mainweight : a.weight;
+    
+    // Calculate displayed weight: mainweight × (sum of subweights / 100)
+    const displayedWeight = +(mainweight * (sumSubWeights / 100)).toFixed(4);
+    
     return {
       ...a,
-      baseWeight:   base,
-      weight:       effectiveWeight,
+      mainweight:   mainweight,     // Store the manually set weight
+      weight:       displayedWeight, // Display calculated weight
       planStart:    planStarts[0] ?? a.planStart,
       planFinish:   planFinishes[planFinishes.length - 1] ?? a.planFinish,
       actualStart:  actualStarts[0] ?? a.actualStart,

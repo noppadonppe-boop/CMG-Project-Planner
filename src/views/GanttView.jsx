@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
 import { useGanttTimeline } from '../hooks/useGanttTimeline';
 import GanttTable from '../components/gantt/GanttTable';
@@ -28,6 +28,8 @@ export default function GanttView() {
 
   // ── Single scroll container ref (replaces two-pane sync) ───────────────
   const scrollContainerRef = useRef(null);
+  const timelineContainerRef = useRef(null);
+  const [timelineWidth, setTimelineWidth] = useState(0);
 
   // ── Collapse toggle ────────────────────────────────────────────────────
   const toggleCollapse = useCallback((id) => {
@@ -44,11 +46,10 @@ export default function GanttView() {
     [activities, selectedProject?.id]
   );
 
-  // ── Leaf-only weight total (used by S-Curve + warning banner) ─────────
+  // ── Main Activity weight total only (used by S-Curve + warning banner) ─────────
   const weightTotal = useMemo(() => {
-    const childIds = new Set(projectActivities.filter((a) => a.parentId).map((a) => a.parentId));
-    const leaves   = projectActivities.filter((a) => !childIds.has(a.id));
-    return +leaves.reduce((s, a) => s + (a.weight || 0), 0).toFixed(2);
+    const mainActivities = projectActivities.filter((a) => !a.parentId);
+    return +mainActivities.reduce((s, a) => s + (a.weight || 0), 0).toFixed(2);
   }, [projectActivities]);
 
   // ── Flat visible rows with hierarchy metadata ──────────────────────────
@@ -115,8 +116,22 @@ export default function GanttView() {
     reorderSubActivities(parentId, orderedSubIds);
   }, [reorderSubActivities]);
 
+  // ── Timeline width measurement ────────────────────────────────────────
+  useEffect(() => {
+    const updateTimelineWidth = () => {
+      if (timelineContainerRef.current) {
+        const rect = timelineContainerRef.current.getBoundingClientRect();
+        setTimelineWidth(rect.width);
+      }
+    };
+
+    updateTimelineWidth();
+    window.addEventListener('resize', updateTimelineWidth);
+    return () => window.removeEventListener('resize', updateTimelineWidth);
+  }, []);
+
   // ── Timeline math ──────────────────────────────────────────────────────
-  const timeline = useGanttTimeline(projectActivities, scale);
+  const timeline = useGanttTimeline(projectActivities, scale, timelineWidth);
 
   // ── Empty states ───────────────────────────────────────────────────────
   if (!selectedProject) {
@@ -234,68 +249,60 @@ export default function GanttView() {
         ) : (
           <div className="flex flex-col flex-1 min-h-0">
 
-            {/* ── Single-scroll Gantt: one container, table + timeline side-by-side ── */}
-            <div
-              ref={scrollContainerRef}
-              className="overflow-auto"
-              style={{ flex: '1 1 0', minHeight: 0, position: 'relative' }}
-            >
-              {/* Sticky left table — absolutely positioned so it doesn't affect flex layout */}
+            {/* ── Split layout: fixed table + scrollable timeline ── */}
+            <div className="flex flex-1 min-h-0">
+              {/* Fixed left table */}
               <div
-                style={{
-                  position: 'sticky',
-                  left: 0,
-                  width: 540,
-                  zIndex: 10,
-                  float: 'left',
-                  flexShrink: 0,
-                }}
+                className="shrink-0 bg-industrial-900"
+                style={{ width: 'clamp(520px, 35vw, 700px)' }}
               >
-                <GanttTable
-                  rows={rows}
-                  collapsed={collapsed}
-                  onToggle={toggleCollapse}
-                  onUpdate={handleUpdate}
-                  onAddMain={handleAddMain}
-                  onAddSub={handleAddSub}
-                  onDelete={handleDeleteRequest}
-                  onReorder={handleReorder}
-                  weightTotal={weightTotal}
-                  ROW_H={ROW_HEIGHT}
-                />
+                <div className="overflow-y-auto h-full">
+                  <GanttTable
+                    rows={rows}
+                    collapsed={collapsed}
+                    onToggle={toggleCollapse}
+                    onUpdate={handleUpdate}
+                    onAddMain={handleAddMain}
+                    onAddSub={handleAddSub}
+                    onDelete={handleDeleteRequest}
+                    onReorder={handleReorder}
+                    weightTotal={weightTotal}
+                    ROW_H={ROW_HEIGHT}
+                  />
+                </div>
               </div>
 
-              {/* Timeline — offset by table width so it sits to the right */}
-              <div style={{ marginLeft: 540 }}>
-                {projectActivities.length > 0 ? (
-                  <GanttTimeline
-                    columns={timeline.columns}
-                    totalWidth={timeline.totalWidth}
-                    rows={rows}
-                    ROW_H={ROW_HEIGHT}
-                    scale={scale}
-                    dateToX={timeline.dateToX}
-                    spanToWidth={timeline.spanToWidth}
-                    pxPerDay={timeline.pxPerDay}
-                    onUpdate={handleUpdate}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center h-32 text-xs text-industrial-500">
-                    ยัງไม่มีกิจกรรม — กดปุ่ม +Main เพื่อเริ่มต้น
-                  </div>
-                )}
+              {/* Scrollable timeline */}
+              <div ref={timelineContainerRef} className="flex-1 min-w-0">
+                <div ref={scrollContainerRef} className="overflow-auto h-full">
+                  {projectActivities.length > 0 ? (
+                    <GanttTimeline
+                      columns={timeline.columns}
+                      totalWidth={timeline.totalWidth}
+                      rows={rows}
+                      ROW_H={ROW_HEIGHT}
+                      scale={scale}
+                      dateToX={timeline.dateToX}
+                      spanToWidth={timeline.spanToWidth}
+                      pxPerDay={timeline.pxPerDay}
+                      onUpdate={handleUpdate}
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-32 text-xs text-industrial-500">
+                      ยังไม่มีกิจกรรม — กดปุ่ม +Main เพื่อเริ่มต้น
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
 
-            {/* ── S-Curve panel ─────────────────────────────────── */}
-            {showSCurve && projectActivities.length > 0 && (
-              <div className="shrink-0 border-t border-industrial-600 bg-industrial-900/60">
-                <SCurveChart
-                  activities={projectActivities}
-                  scale={scale}
-                  projectName={selectedProject.name}
-                />
-              </div>
+            {/* S-Curve Chart */}
+            {showSCurve && (
+              <SCurveChart
+                activities={projectActivities}
+                scale={scale}
+                projectName={selectedProject.name}
+              />
             )}
           </div>
         )}

@@ -32,14 +32,18 @@ export default function GanttTable({
   // ── Column width (resizable headers) ───────────────────────────────────
   const [colWidths, setColWidths] = useState({
     wbs: 52,
+    name: 200,
     weight: 70,
-    plan: 120,
+    plan: 140,
     progress: 90,
     actions: 64,
   });
 
   // ── Plan date popup editor state ───────────────────────────────────────
   const [dateEditor, setDateEditor] = useState(null);
+  
+  // ── Weight editor state for Main Activities ─────────────────────────────
+  const [weightEditor, setWeightEditor] = useState(null);
 
   function startResize(colKey, e) {
     e.preventDefault();
@@ -139,8 +143,33 @@ export default function GanttTable({
     setDateEditor(null);
   }
 
+  function openWeightEditor(row) {
+    setWeightEditor({
+      id: row.id,
+      wbs: row.wbs,
+      name: row.name,
+      mainweight: row.mainweight || row.weight || 0,
+    });
+  }
+
+  function closeWeightEditor() {
+    setWeightEditor(null);
+  }
+
+  function updateWeightField(value) {
+    setWeightEditor((prev) => (prev ? { ...prev, mainweight: value } : prev));
+  }
+
+  function saveWeight() {
+    if (!weightEditor || !onUpdate) return;
+    onUpdate(weightEditor.id, {
+      mainweight: Number(weightEditor.mainweight) || 0,
+    });
+    setWeightEditor(null);
+  }
+
   return (
-    <div className="shrink-0 border-r border-industrial-600 flex flex-col select-none" style={{ minWidth: 520 }}>
+    <div className="shrink-0 border-r-2 border-industrial-600 flex flex-col select-none overflow-hidden" style={{ minWidth: 520 }}>
 
       {/* ── Column Header ──────────────────────────────────────────── */}
       <div
@@ -153,7 +182,11 @@ export default function GanttTable({
             width={colWidths.wbs}
             onResize={(e) => startResize('wbs', e)}
           />
-          <ColHead label="ชื่องาน" flex />
+          <ColHead 
+            label="ชื่องาน" 
+            width={colWidths.name || 200}
+            onResize={(e) => startResize('name', e)}
+          />
           <ColHead
             label="น้ำหนัก"
             width={colWidths.weight}
@@ -221,7 +254,10 @@ export default function GanttTable({
               </div>
 
               {/* Name */}
-              <div className="flex-1 min-w-[260px] flex items-center gap-1 pr-1">
+              <div 
+                className="shrink-0 flex items-center gap-1 pr-1"
+                style={{ width: colWidths.name }}
+              >
                 {/* Drag handle for sub rows */}
                 {!isMain ? (
                   <span
@@ -247,6 +283,12 @@ export default function GanttTable({
                 <span
                   className={`flex-1 truncate text-xs leading-tight ${isMain ? 'font-semibold text-white' : 'text-industrial-200'}`}
                   title={row.name}
+                  style={{ 
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    maxWidth: '100%'
+                  }}
                 >
                   {row.name}
                 </span>
@@ -261,7 +303,24 @@ export default function GanttTable({
                 className="shrink-0 px-1 text-xs text-industrial-300 flex items-center"
                 style={{ width: colWidths.weight }}
               >
-                {(!isMain || !row._hasChildren) ? (
+                {isMain && hasKids ? (
+                  // Main Activity with sub-activities: Show calculated weight with Set Weight button
+                  <button
+                    type="button"
+                    className="w-full text-left hover:bg-industrial-700/50 rounded px-1 py-0.5 transition-colors"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openWeightEditor(row);
+                    }}
+                    title="กดเพื่อตั้งค่า Main Weight"
+                  >
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-mono text-[10px]">{(+row.weight).toFixed(1)}%</span>
+                      <span className="text-[8px] text-industrial-500">Set</span>
+                    </div>
+                  </button>
+                ) : (
+                  // Sub-activities or Main without subs: Direct input
                   <div className="flex items-center gap-1 w-full">
                     <input
                       type="number"
@@ -282,10 +341,6 @@ export default function GanttTable({
                     />
                     <span className="text-[10px] text-industrial-400 shrink-0">%</span>
                   </div>
-                ) : (
-                  <span className="w-full text-center font-mono">
-                    {(+row.weight).toFixed(2)}%
-                  </span>
                 )}
               </div>
 
@@ -372,6 +427,81 @@ export default function GanttTable({
         })}
       </div>
 
+      {/* Weight editor popup */}
+      {weightEditor && (
+        <div
+          className="fixed inset-0 z-[155] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(10,21,32,0.45)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeWeightEditor(); }}
+        >
+          <div className="card w-full max-w-sm shadow-2xl">
+            <div className="flex items-start gap-2 px-4 py-3 border-b border-industrial-700">
+              <div className="w-8 h-8 rounded-lg bg-accent-700 flex items-center justify-center shrink-0 mt-0.5">
+                <span className="text-white font-bold text-xs">%</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-industrial-500">{weightEditor.wbs}</span>
+                </div>
+                <h3 className="text-xs font-semibold text-white truncate mt-0.5" title={weightEditor.name}>
+                  ตั้งค่า Main Weight
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeWeightEditor}
+                className="btn-ghost p-1.5 shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="px-4 py-3">
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-industrial-400 mb-2">
+                    น้ำหนักของ Main Activity (%)
+                  </label>
+                  <input
+                    type="number"
+                    className="w-full bg-industrial-700 border border-industrial-600 rounded px-3 py-2 text-sm text-industrial-100 focus:outline-none focus:border-accent-500 focus:ring-1 focus:ring-accent-500/20"
+                    value={weightEditor.mainweight}
+                    min={0}
+                    max={100}
+                    step={0.1}
+                    onChange={(e) => updateWeightField(e.target.value)}
+                    autoFocus
+                  />
+                </div>
+                <div className="text-xs text-industrial-400 bg-industrial-800/50 rounded p-2">
+                  <p><strong>หมายเหตุ:</strong> น้ำหนักที่แสดงจะคำนวณจาก:</p>
+                  <p className="font-mono text-accent-400 mt-1">
+                    แสดง = Main Weight × (ผลรวม Sub Weight / 100%)
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex justify-end gap-2 pt-4">
+                <button
+                  type="button"
+                  onClick={closeWeightEditor}
+                  className="btn-secondary text-xs"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={saveWeight}
+                  className="btn-primary text-xs"
+                >
+                  บันทึก
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Plan date popup editor */}
       {dateEditor && (
         <div
@@ -379,7 +509,7 @@ export default function GanttTable({
           style={{ backgroundColor: 'rgba(10,21,32,0.45)' }}
           onClick={(e) => { if (e.target === e.currentTarget) closeDateEditor(); }}
         >
-          <div className="card w-full max-w-xs shadow-2xl">
+          <div className="card w-full max-w-md shadow-2xl">
             <div className="flex items-start gap-2 px-4 py-3 border-b border-industrial-700">
               <div className="w-8 h-8 rounded-lg bg-blue-700 flex items-center justify-center shrink-0 mt-0.5">
                 <Calendar size={14} className="text-white" />
@@ -401,28 +531,36 @@ export default function GanttTable({
               </button>
             </div>
 
-            <div className="px-4 py-3 space-y-3">
-              <div className="space-y-1">
-                <label className="block text-[10px] font-medium text-industrial-400">
-                  วันเริ่มแผน
-                </label>
-                <input
-                  type="date"
-                  className="w-full bg-industrial-700 border border-industrial-600 rounded px-2 py-1.5 text-[10px] text-industrial-100 focus:outline-none focus:border-accent-500"
-                  value={dateEditor.planStart}
-                  onChange={(e) => updateDateField('planStart', e.target.value)}
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="block text-[10px] font-medium text-industrial-400">
-                  วันเสร็จแผน
-                </label>
-                <input
-                  type="date"
-                  className="w-full bg-industrial-700 border border-industrial-600 rounded px-2 py-1.5 text-[10px] text-industrial-100 focus:outline-none focus:border-accent-500"
-                  value={dateEditor.planFinish}
-                  onChange={(e) => updateDateField('planFinish', e.target.value)}
-                />
+            <div className="px-4 py-3">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 pb-2 border-b border-industrial-700">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <label className="block text-xs font-semibold text-green-400">
+                      วันเริ่มแผน
+                    </label>
+                  </div>
+                  <input
+                    type="date"
+                    className="w-full bg-industrial-700 border border-industrial-600 rounded px-3 py-2 text-xs text-industrial-100 focus:outline-none focus:border-green-500 focus:ring-1 focus:ring-green-500/20"
+                    value={dateEditor.planStart}
+                    onChange={(e) => updateDateField('planStart', e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2 pb-2 border-b border-industrial-700">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <label className="block text-xs font-semibold text-red-400">
+                      วันเสร็จแผน
+                    </label>
+                  </div>
+                  <input
+                    type="date"
+                    className="w-full bg-industrial-700 border border-industrial-600 rounded px-3 py-2 text-xs text-industrial-100 focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500/20"
+                    value={dateEditor.planFinish}
+                    onChange={(e) => updateDateField('planFinish', e.target.value)}
+                  />
+                </div>
               </div>
               <div className="flex justify-end gap-2 pt-1">
                 <button
