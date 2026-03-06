@@ -1,9 +1,9 @@
 import { useRef, useState } from 'react';
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, GitBranch, GripVertical } from 'lucide-react';
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, GitBranch, GripVertical, Calendar, X, Save } from 'lucide-react';
 import { format, parseISO, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 
-const ROW_HEIGHT = 52;
+const ROW_HEIGHT = 40;
 
 function fmt(str) {
   if (!str) return '—';
@@ -21,12 +21,50 @@ function progressColor(p) {
 export default function GanttTable({
   rows, collapsed, onToggle, onEdit,
   onAddMain, onAddSub, onDelete, onReorder,
+  onUpdate,
   ROW_H = ROW_HEIGHT,
 }) {
   // ── Drag-and-drop state (sub activities only) ─────────────────────────
   const dragId   = useRef(null);   // id of the row being dragged
   const dragParent = useRef(null); // parentId of the dragged row
   const [dragOverId, setDragOverId] = useState(null); // id of the row currently hovered
+
+  // ── Column width (resizable headers) ───────────────────────────────────
+  const [colWidths, setColWidths] = useState({
+    wbs: 52,
+    weight: 70,
+    plan: 120,
+    progress: 90,
+    actions: 64,
+  });
+
+  // ── Plan date popup editor state ───────────────────────────────────────
+  const [dateEditor, setDateEditor] = useState(null);
+
+  function startResize(colKey, e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startWidth = colWidths[colKey] ?? 60;
+
+    function onMove(ev) {
+      const dx = ev.clientX - startX;
+      const raw = startWidth + dx;
+      const next = Math.max(40, raw);
+      setColWidths((prev) => {
+        if (prev[colKey] === next) return prev;
+        return { ...prev, [colKey]: next };
+      });
+    }
+
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
 
   function handleDragStart(e, row) {
     dragId.current     = row.id;
@@ -74,8 +112,35 @@ export default function GanttTable({
     dragParent.current = null;
   }
 
+  function openDateEditor(row) {
+    setDateEditor({
+      id: row.id,
+      wbs: row.wbs,
+      name: row.name,
+      planStart: row.planStart || '',
+      planFinish: row.planFinish || '',
+    });
+  }
+
+  function closeDateEditor() {
+    setDateEditor(null);
+  }
+
+  function updateDateField(field, value) {
+    setDateEditor((prev) => (prev ? { ...prev, [field]: value } : prev));
+  }
+
+  function saveDates() {
+    if (!dateEditor || !onUpdate) return;
+    onUpdate(dateEditor.id, {
+      planStart: dateEditor.planStart || null,
+      planFinish: dateEditor.planFinish || null,
+    });
+    setDateEditor(null);
+  }
+
   return (
-    <div className="shrink-0 border-r border-industrial-600 flex flex-col select-none" style={{ minWidth: 460 }}>
+    <div className="shrink-0 border-r border-industrial-600 flex flex-col select-none" style={{ minWidth: 520 }}>
 
       {/* ── Column Header ──────────────────────────────────────────── */}
       <div
@@ -83,14 +148,32 @@ export default function GanttTable({
         style={{ height: 56 }}
       >
         <div className="flex h-full items-end">
-          <ColHead label="WBS"          width={52}  />
-          <ColHead label="ชื่องาน"      flex        />
-          <ColHead label="น้ำหนัก"      width={58}  />
-          <ColHead label="แผนเริ่ม"     width={80}  />
-          <ColHead label="แผนเสร็จ"     width={80}  />
-          <ColHead label="ความก้าวหน้า" width={90}  />
+          <ColHead
+            label="WBS"
+            width={colWidths.wbs}
+            onResize={(e) => startResize('wbs', e)}
+          />
+          <ColHead label="ชื่องาน" flex />
+          <ColHead
+            label="น้ำหนัก"
+            width={colWidths.weight}
+            onResize={(e) => startResize('weight', e)}
+          />
+          <ColHead
+            label="แผน (เริ่ม / เสร็จ)"
+            width={colWidths.plan}
+            onResize={(e) => startResize('plan', e)}
+          />
+          <ColHead
+            label="ความก้าวหน้า"
+            width={colWidths.progress}
+            onResize={(e) => startResize('progress', e)}
+          />
           {/* actions column */}
-          <div className="shrink-0 flex items-end justify-center pb-2" style={{ width: 64 }}>
+          <div
+            className="shrink-0 flex items-end justify-center pb-2 border-l border-industrial-700/50"
+            style={{ width: colWidths.actions }}
+          >
             <button
               onClick={onAddMain}
               title="เพิ่ม Main Activity"
@@ -128,18 +211,17 @@ export default function GanttTable({
                       : 'border-industrial-700/60 bg-industrial-900/40 hover:bg-industrial-700/20'
                 }`}
               style={{ height: ROW_H }}
-              onClick={() => onEdit && onEdit(row)}
             >
               {/* WBS */}
               <div
                 className="shrink-0 flex items-center justify-center text-[10px] font-mono text-industrial-400"
-                style={{ width: 52 }}
+                style={{ width: colWidths.wbs }}
               >
                 {row.wbs}
               </div>
 
               {/* Name */}
-              <div className="flex-1 min-w-0 flex items-center gap-1 pr-1">
+              <div className="flex-1 min-w-[260px] flex items-center gap-1 pr-1">
                 {/* Drag handle for sub rows */}
                 {!isMain ? (
                   <span
@@ -176,39 +258,94 @@ export default function GanttTable({
 
               {/* Weight */}
               <div
-                className="shrink-0 text-center text-xs font-mono text-industrial-300"
-                style={{ width: 58 }}
+                className="shrink-0 px-1 text-xs text-industrial-300 flex items-center"
+                style={{ width: colWidths.weight }}
               >
-                {(+row.weight).toFixed(2)}%
+                {(!isMain || !row._hasChildren) ? (
+                  <div className="flex items-center gap-1 w-full">
+                    <input
+                      type="number"
+                      className="w-full bg-industrial-800 border border-industrial-700 rounded px-1 py-0.5 text-[10px] text-industrial-100 focus:outline-none focus:border-accent-500"
+                      value={row.weight ?? ''}
+                      min={0}
+                      max={100}
+                      step={0.1}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onChange={(e) => {
+                        if (!onUpdate) return;
+                        const v = e.target.value;
+                        const num = v === '' ? 0 : Number(v);
+                        if (Number.isNaN(num)) return;
+                        onUpdate(row.id, { weight: num });
+                      }}
+                    />
+                    <span className="text-[10px] text-industrial-400 shrink-0">%</span>
+                  </div>
+                ) : (
+                  <span className="w-full text-center font-mono">
+                    {(+row.weight).toFixed(2)}%
+                  </span>
+                )}
               </div>
 
-              {/* Plan Start */}
-              <div className="shrink-0 text-center text-[10px] font-mono text-industrial-400" style={{ width: 80 }}>
-                {fmt(row.planStart)}
-              </div>
-
-              {/* Plan Finish */}
-              <div className="shrink-0 text-center text-[10px] font-mono text-industrial-400" style={{ width: 80 }}>
-                {fmt(row.planFinish)}
-              </div>
+              {/* Plan (Start / Finish in one column) */}
+              <button
+                type="button"
+                className="shrink-0 px-1 text-[10px] text-industrial-300 flex items-center justify-center text-left"
+                style={{ width: colWidths.plan }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  openDateEditor(row);
+                }}
+              >
+                <div className="flex flex-col leading-tight w-full">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[9px] text-industrial-500">เริ่ม</span>
+                    <span className="font-mono">{fmt(row.planStart)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-1 mt-0.5">
+                    <span className="text-[9px] text-industrial-500">เสร็จ</span>
+                    <span className="font-mono">{fmt(row.planFinish)}</span>
+                  </div>
+                </div>
+              </button>
 
               {/* Progress */}
-              <div className="shrink-0 flex items-center gap-1.5 px-2" style={{ width: 90 }}>
+              <div
+                className="shrink-0 flex items-center gap-1.5 px-2"
+                style={{ width: colWidths.progress }}
+              >
                 <div className="flex-1 bg-industrial-700 rounded-full h-1.5 overflow-hidden">
                   <div
                     className={`h-full rounded-full transition-all ${progressColor(row.progress)}`}
                     style={{ width: `${row.progress}%` }}
                   />
                 </div>
-                <span className="text-[10px] font-mono text-industrial-300 w-7 text-right">
-                  {row.progress}%
-                </span>
+                <input
+                  type="number"
+                  className="w-11 bg-industrial-800 border border-industrial-700 rounded px-1 py-0.5 text-[10px] text-industrial-100 text-right focus:outline-none focus:border-accent-500"
+                  value={row.progress ?? 0}
+                  min={0}
+                  max={100}
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onChange={(e) => {
+                    if (!onUpdate) return;
+                    const v = e.target.value;
+                    const num = v === '' ? 0 : Number(v);
+                    if (Number.isNaN(num)) return;
+                    const clamped = Math.max(0, Math.min(100, num));
+                    onUpdate(row.id, { progress: clamped });
+                  }}
+                />
+                <span className="text-[10px] font-mono text-industrial-400 w-3 text-left">%</span>
               </div>
 
               {/* Row actions */}
               <div
                 className="shrink-0 flex items-center justify-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                style={{ width: 64 }}
+                style={{ width: colWidths.actions }}
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Add Sub button — only on Main activities */}
@@ -234,17 +371,99 @@ export default function GanttTable({
           );
         })}
       </div>
+
+      {/* Plan date popup editor */}
+      {dateEditor && (
+        <div
+          className="fixed inset-0 z-[155] flex items-center justify-center p-4"
+          style={{ backgroundColor: 'rgba(10,21,32,0.45)' }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeDateEditor(); }}
+        >
+          <div className="card w-full max-w-xs shadow-2xl">
+            <div className="flex items-start gap-2 px-4 py-3 border-b border-industrial-700">
+              <div className="w-8 h-8 rounded-lg bg-blue-700 flex items-center justify-center shrink-0 mt-0.5">
+                <Calendar size={14} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-mono text-industrial-500">{dateEditor.wbs}</span>
+                </div>
+                <h3 className="text-xs font-semibold text-white truncate mt-0.5" title={dateEditor.name}>
+                  กำหนดแผนเริ่ม / เสร็จ
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={closeDateEditor}
+                className="btn-ghost p-1.5 shrink-0"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            <div className="px-4 py-3 space-y-3">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-medium text-industrial-400">
+                  วันเริ่มแผน
+                </label>
+                <input
+                  type="date"
+                  className="w-full bg-industrial-700 border border-industrial-600 rounded px-2 py-1.5 text-[10px] text-industrial-100 focus:outline-none focus:border-accent-500"
+                  value={dateEditor.planStart}
+                  onChange={(e) => updateDateField('planStart', e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-[10px] font-medium text-industrial-400">
+                  วันเสร็จแผน
+                </label>
+                <input
+                  type="date"
+                  className="w-full bg-industrial-700 border border-industrial-600 rounded px-2 py-1.5 text-[10px] text-industrial-100 focus:outline-none focus:border-accent-500"
+                  value={dateEditor.planFinish}
+                  onChange={(e) => updateDateField('planFinish', e.target.value)}
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={closeDateEditor}
+                  className="btn-secondary text-xs"
+                >
+                  ยกเลิก
+                </button>
+                <button
+                  type="button"
+                  onClick={saveDates}
+                  className="btn-primary text-xs inline-flex items-center gap-1"
+                >
+                  <Save size={13} />
+                  บันทึก
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function ColHead({ label, width, flex }) {
+function ColHead({ label, width, flex, onResize }) {
   return (
     <div
       className={`px-2 pb-2 text-[10px] font-semibold text-industrial-400 uppercase tracking-wider border-r border-industrial-700/50 last:border-r-0 ${flex ? 'flex-1 min-w-0' : 'shrink-0'}`}
       style={flex ? undefined : { width }}
     >
-      {label}
+      <div className="flex items-center justify-between gap-1">
+        <span className="truncate">{label}</span>
+        {!flex && onResize && (
+          <span
+            onMouseDown={onResize}
+            className="w-1.5 h-5 cursor-col-resize bg-industrial-600/70 hover:bg-accent-500 rounded-full"
+          />
+        )}
+      </div>
     </div>
   );
 }

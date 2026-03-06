@@ -2,7 +2,7 @@ import { format } from 'date-fns';
 import { th } from 'date-fns/locale';
 import GanttBar from './GanttBar';
 
-const ROW_HEIGHT = 52;
+const ROW_HEIGHT = 40;
 const HEADER_HEIGHT = 56; // must match GanttTable sticky header height
 
 /**
@@ -72,6 +72,7 @@ export default function GanttTimeline({
               onUpdate={onUpdate}
               onEdit={onEdit}
               totalWidth={totalWidth}
+              ROW_H={ROW_H}
             />
           </div>
         ))}

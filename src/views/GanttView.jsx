@@ -4,20 +4,18 @@ import { useGanttTimeline } from '../hooks/useGanttTimeline';
 import GanttTable from '../components/gantt/GanttTable';
 import GanttTimeline from '../components/gantt/GanttTimeline';
 import GanttScaleBar from '../components/gantt/GanttScaleBar';
-import ActivityEditModal from '../components/gantt/ActivityEditModal';
 import ActivityManagerModal from '../components/gantt/ActivityManagerModal';
 import SCurveChart from '../components/gantt/SCurveChart';
 import LookaheadView from '../components/gantt/LookaheadView';
 import PrintDialog from '../components/gantt/PrintDialog';
 import { BarChart2, AlertTriangle, CheckCircle } from 'lucide-react';
 
-const ROW_HEIGHT = 52;
+const ROW_HEIGHT = 40;
 
 export default function GanttView() {
   const { selectedProject, activities, updateActivity, addActivity, deleteActivity, reorderSubActivities } = useApp();
   const [scale, setScale]               = useState('months');
   const [collapsed, setCollapsed]       = useState(new Set());
-  const [editingRow, setEditingRow]     = useState(null);
   const [showSCurve, setShowSCurve]         = useState(true);
   const [showLookahead, setShowLookahead]   = useState(false);
   const [showPrintDialog, setShowPrintDialog] = useState(false);
@@ -83,15 +81,6 @@ export default function GanttView() {
   // ── Handlers ──────────────────────────────────────────────────────────
   const handleUpdate = useCallback((id, updates) => {
     updateActivity(id, updates);
-  }, [updateActivity]);
-
-  const handleEdit = useCallback((row) => {
-    setEditingRow(row);
-  }, []);
-
-  const handleModalSave = useCallback((id, updates) => {
-    updateActivity(id, updates);
-    setEditingRow(null);
   }, [updateActivity]);
 
   const handlePrint = useCallback(() => {
@@ -256,7 +245,7 @@ export default function GanttView() {
                 style={{
                   position: 'sticky',
                   left: 0,
-                  width: 460,
+                  width: 540,
                   zIndex: 10,
                   float: 'left',
                   flexShrink: 0,
@@ -266,7 +255,7 @@ export default function GanttView() {
                   rows={rows}
                   collapsed={collapsed}
                   onToggle={toggleCollapse}
-                  onEdit={handleEdit}
+                  onUpdate={handleUpdate}
                   onAddMain={handleAddMain}
                   onAddSub={handleAddSub}
                   onDelete={handleDeleteRequest}
@@ -277,7 +266,7 @@ export default function GanttView() {
               </div>
 
               {/* Timeline — offset by table width so it sits to the right */}
-              <div style={{ marginLeft: 460 }}>
+              <div style={{ marginLeft: 540 }}>
                 {projectActivities.length > 0 ? (
                   <GanttTimeline
                     columns={timeline.columns}
@@ -289,7 +278,6 @@ export default function GanttView() {
                     spanToWidth={timeline.spanToWidth}
                     pxPerDay={timeline.pxPerDay}
                     onUpdate={handleUpdate}
-                    onEdit={handleEdit}
                   />
                 ) : (
                   <div className="flex items-center justify-center h-32 text-xs text-industrial-500">
@@ -312,13 +300,6 @@ export default function GanttView() {
           </div>
         )}
 
-        {/* Activity Edit Modal */}
-        <ActivityEditModal
-          isOpen={Boolean(editingRow)}
-          activity={editingRow}
-          onSave={handleModalSave}
-          onClose={() => setEditingRow(null)}
-        />
       </div>
     </>
   );

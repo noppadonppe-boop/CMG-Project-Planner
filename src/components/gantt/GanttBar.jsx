@@ -13,9 +13,7 @@ import { th } from 'date-fns/locale';
  * All dates are ISO strings (YYYY-MM-DD). pxPerDay converts px ↔ days.
  */
 
-const BAR_H = 10;           // height of each bar in px
-const PLAN_TOP   = 11;      // vertical offset within the 52px row cell (11px top padding)
-const ACTUAL_TOP = 32;      // 11 + 10 (plan bar) + 11 (gap) = 32px
+const BAR_H = 8;           // height of each bar in px
 
 function safeParseISO(s) {
   if (!s) return null;
@@ -30,7 +28,7 @@ function fmtTip(s) {
   return d ? format(d, 'd MMM yyyy', { locale: th }) : '—';
 }
 
-export default function GanttBar({ row, dateToX, spanToWidth, pxPerDay, onUpdate, onEdit, totalWidth }) {
+export default function GanttBar({ row, dateToX, spanToWidth, pxPerDay, onUpdate, onEdit, totalWidth, ROW_H }) {
   const dragRef = useRef(null);
 
   /* ── Generic pointer-drag starter ──────────────────────────────────── */
@@ -77,6 +75,10 @@ export default function GanttBar({ row, dateToX, spanToWidth, pxPerDay, onUpdate
   }, [row, pxPerDay, onUpdate]);
 
   /* ── Compute bar geometry ──────────────────────────────────────────── */
+  const rowHeight = ROW_H || 40;
+  const planTop   = Math.round(rowHeight * 0.2);
+  const actualTop = Math.round(rowHeight * 0.6);
+
   const planX  = dateToX(row.planStart);
   const planW  = spanToWidth(row.planStart, row.planFinish);
   const hasActualStart  = Boolean(row.actualStart);
@@ -121,7 +123,7 @@ export default function GanttBar({ row, dateToX, spanToWidth, pxPerDay, onUpdate
         <div
           className="absolute rounded-sm bg-industrial-500/80 border border-industrial-400/50
                      hover:bg-industrial-400/80 transition-colors group/plan"
-          style={{ left: planX, top: PLAN_TOP, width: Math.max(4, planW), height: BAR_H }}
+          style={{ left: planX, top: planTop, width: Math.max(4, planW), height: BAR_H }}
           title={`แผน: ${fmtTip(row.planStart)} → ${fmtTip(row.planFinish)}`}
           onPointerDown={(e) => canEdit && startDrag(e, 'plan', 'move')}
         >
@@ -146,7 +148,7 @@ export default function GanttBar({ row, dateToX, spanToWidth, pxPerDay, onUpdate
         <div
           className={`absolute rounded-sm border border-white/10 overflow-hidden
                       hover:brightness-110 transition-all group/actual ${actualBarColor}`}
-          style={{ left: actualX, top: ACTUAL_TOP, width: Math.max(4, actualW), height: BAR_H }}
+          style={{ left: actualX, top: actualTop, width: Math.max(4, actualW), height: BAR_H }}
           title={`จริง: ${fmtTip(row.actualStart)} → ${row.actualFinish ? fmtTip(row.actualFinish) : 'กำลังดำเนินการ'} (${row.progress}%)`}
           onPointerDown={(e) => canEdit && startDrag(e, 'actual', 'move')}
         >
@@ -181,13 +183,13 @@ export default function GanttBar({ row, dateToX, spanToWidth, pxPerDay, onUpdate
       {row.planStart && hasActualStart && isLate && row.actualFinish && (
         <svg
           className="absolute pointer-events-none"
-          style={{ left: 0, top: 0, width: totalWidth, height: 52, overflow: 'visible', zIndex: 0 }}
+          style={{ left: 0, top: 0, width: totalWidth, height: rowHeight, overflow: 'visible', zIndex: 0 }}
         >
           <line
             x1={planX + planW}
-            y1={PLAN_TOP + BAR_H / 2}
+            y1={planTop + BAR_H / 2}
             x2={actualX + actualW}
-            y2={ACTUAL_TOP + BAR_H / 2}
+            y2={actualTop + BAR_H / 2}
             stroke="rgba(239,68,68,0.4)"
             strokeWidth="1"
             strokeDasharray="3 2"
