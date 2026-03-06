@@ -14,7 +14,7 @@ import { BarChart2, AlertTriangle, CheckCircle } from 'lucide-react';
 const ROW_HEIGHT = 52;
 
 export default function GanttView() {
-  const { selectedProject, activities, updateActivity, addActivity, deleteActivity } = useApp();
+  const { selectedProject, activities, updateActivity, addActivity, deleteActivity, reorderSubActivities } = useApp();
   const [scale, setScale]               = useState('months');
   const [collapsed, setCollapsed]       = useState(new Set());
   const [editingRow, setEditingRow]     = useState(null);
@@ -121,6 +121,10 @@ export default function GanttView() {
       setDeleteTarget(null);
     }
   }, [deleteActivity, deleteTarget]);
+
+  const handleReorder = useCallback((parentId, orderedSubIds) => {
+    reorderSubActivities(parentId, orderedSubIds);
+  }, [reorderSubActivities]);
 
   // ── Timeline math ──────────────────────────────────────────────────────
   const timeline = useGanttTimeline(projectActivities, scale);
@@ -266,6 +270,7 @@ export default function GanttView() {
                   onAddMain={handleAddMain}
                   onAddSub={handleAddSub}
                   onDelete={handleDeleteRequest}
+                  onReorder={handleReorder}
                   weightTotal={weightTotal}
                   ROW_H={ROW_HEIGHT}
                 />

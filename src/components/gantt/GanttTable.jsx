@@ -1,4 +1,5 @@
-import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, GitBranch } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ChevronDown, ChevronRight, Pencil, Plus, Trash2, GitBranch, GripVertical } from 'lucide-react';
 import { format, parseISO, isValid } from 'date-fns';
 import { th } from 'date-fns/locale';
 
@@ -19,9 +20,60 @@ function progressColor(p) {
 
 export default function GanttTable({
   rows, collapsed, onToggle, onEdit,
-  onAddMain, onAddSub, onDelete,
+  onAddMain, onAddSub, onDelete, onReorder,
   ROW_H = ROW_HEIGHT,
 }) {
+  // ── Drag-and-drop state (sub activities only) ─────────────────────────
+  const dragId   = useRef(null);   // id of the row being dragged
+  const dragParent = useRef(null); // parentId of the dragged row
+  const [dragOverId, setDragOverId] = useState(null); // id of the row currently hovered
+
+  function handleDragStart(e, row) {
+    dragId.current     = row.id;
+    dragParent.current = row.parentId;
+    e.dataTransfer.effectAllowed = 'move';
+  }
+
+  function handleDragOver(e, row) {
+    // Only allow drop on sub rows with the same parent
+    if (!dragId.current) return;
+    if (row.parentId !== dragParent.current) return;
+    if (row.id === dragId.current) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverId(row.id);
+  }
+
+  function handleDrop(e, targetRow) {
+    e.preventDefault();
+    setDragOverId(null);
+    if (!dragId.current) return;
+    if (targetRow.parentId !== dragParent.current) return;
+    if (targetRow.id === dragId.current) return;
+
+    // Rebuild ordered sub-id list by moving dragged item before the target
+    const parentId  = dragParent.current;
+    const siblings  = rows.filter((r) => r.parentId === parentId);
+    const ids       = siblings.map((r) => r.id);
+    const fromIdx   = ids.indexOf(dragId.current);
+    const toIdx     = ids.indexOf(targetRow.id);
+    if (fromIdx === -1 || toIdx === -1) return;
+
+    const reordered = [...ids];
+    reordered.splice(fromIdx, 1);
+    reordered.splice(toIdx, 0, dragId.current);
+
+    onReorder && onReorder(parentId, reordered);
+    dragId.current     = null;
+    dragParent.current = null;
+  }
+
+  function handleDragEnd() {
+    setDragOverId(null);
+    dragId.current     = null;
+    dragParent.current = null;
+  }
+
   return (
     <div className="shrink-0 border-r border-industrial-600 flex flex-col select-none" style={{ minWidth: 460 }}>
 
@@ -58,12 +110,23 @@ export default function GanttTable({
           const isMain  = !row.parentId;
           const hasKids = row._hasChildren;
           const isCol   = collapsed.has(row.id);
+          const isDragOver = dragOverId === row.id;
 
           return (
             <div
               key={row.id}
-              className={`group flex items-center border-b border-industrial-700/60 transition-colors cursor-pointer
-                ${isMain ? 'bg-industrial-800/70 hover:bg-industrial-700/50' : 'bg-industrial-900/40 hover:bg-industrial-700/20'}`}
+              draggable={!isMain}
+              onDragStart={!isMain ? (e) => handleDragStart(e, row) : undefined}
+              onDragOver={!isMain  ? (e) => handleDragOver(e, row)  : undefined}
+              onDrop={!isMain      ? (e) => handleDrop(e, row)      : undefined}
+              onDragEnd={!isMain   ? handleDragEnd                  : undefined}
+              className={`group flex items-center border-b transition-colors cursor-pointer
+                ${ isDragOver
+                    ? 'border-accent-400 bg-accent-600/20'
+                    : isMain
+                      ? 'border-industrial-700/60 bg-industrial-800/70 hover:bg-industrial-700/50'
+                      : 'border-industrial-700/60 bg-industrial-900/40 hover:bg-industrial-700/20'
+                }`}
               style={{ height: ROW_H }}
               onClick={() => onEdit && onEdit(row)}
             >
@@ -77,7 +140,18 @@ export default function GanttTable({
 
               {/* Name */}
               <div className="flex-1 min-w-0 flex items-center gap-1 pr-1">
-                {!isMain && <span style={{ width: 12 }} />}
+                {/* Drag handle for sub rows */}
+                {!isMain ? (
+                  <span
+                    className="shrink-0 text-industrial-600 hover:text-industrial-300 cursor-grab active:cursor-grabbing"
+                    style={{ width: 12 }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <GripVertical size={11} />
+                  </span>
+                ) : (
+                  <span style={{ width: 12 }} />
+                )}
                 {hasKids ? (
                   <button
                     onClick={(e) => { e.stopPropagation(); onToggle(row.id); }}
@@ -105,7 +179,7 @@ export default function GanttTable({
                 className="shrink-0 text-center text-xs font-mono text-industrial-300"
                 style={{ width: 58 }}
               >
-                {row.weight}%
+                {(+row.weight).toFixed(2)}%
               </div>
 
               {/* Plan Start */}

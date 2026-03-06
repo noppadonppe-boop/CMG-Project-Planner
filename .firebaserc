@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "constructioncontrol-37f21"
+  },
+  "targets": {
+    "constructioncontrol-37f21": {
+      "hosting": {
+        "site-02": [
+          "cmgprojectplanner"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

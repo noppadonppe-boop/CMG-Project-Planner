@@ -119,11 +119,30 @@ export function AppProvider({ children }) {
 
   const addActivity = useCallback(async (activity) => {
     const id = `act-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    // Compute new WBS locally first for immediate feedback
-    const projected = reWBS([...activities, { ...activity, id }], activity.projectId);
-    // Write all re-numbered activities for this project in one batch
+    // Sub activity: assign wbs = 'parentWbs.0' so reWBS places it before .1, .2 …
+    const initialWbs = activity.parentId
+      ? (() => {
+          const parent = activities.find((a) => a.id === activity.parentId);
+          return `${parent?.wbs ?? '?'}.0`;
+        })()
+      : '?';
+    const newAct = { ...activity, id, wbs: initialWbs };
+    // When a main activity gets its first sub, snapshot its current weight as baseWeight
+    const withBase = newAct.parentId
+      ? activities.map((a) => {
+          if (a.id === newAct.parentId && a.baseWeight === undefined) {
+            return { ...a, baseWeight: a.weight };
+          }
+          return a;
+        })
+      : activities;
+    const projected = reWBS([...withBase, newAct], activity.projectId);
+    // Recompute parent effective weight after adding sub
+    const afterRollup = newAct.parentId
+      ? rollUpParent(projected, newAct.parentId)
+      : projected;
     const batch = writeBatch(db);
-    projected
+    afterRollup
       .filter((a) => a.projectId === activity.projectId)
       .forEach((a) => batch.set(doc(activitiesCol(), a.id), a));
     await batch.commit();
@@ -140,8 +159,7 @@ export function AppProvider({ children }) {
 
     // Write only changed documents
     const batch = writeBatch(db);
-    final.forEach((a, i) => {
-      const orig = activities[i];
+    final.forEach((a) => {
       if (JSON.stringify(a) !== JSON.stringify(activities.find((x) => x.id === a.id))) {
         batch.set(doc(activitiesCol(), a.id), a);
       }
@@ -166,6 +184,25 @@ export function AppProvider({ children }) {
     toDelete.forEach((delId) => batch.delete(doc(activitiesCol(), delId)));
     renumbered
       .filter((a) => a.projectId === projectId)
+      .forEach((a) => batch.set(doc(activitiesCol(), a.id), a));
+    await batch.commit();
+  }, [activities]);
+
+  // Reorder sub activities within a parent (drag-drop) by providing ordered array of sub ids
+  const reorderSubActivities = useCallback(async (parentId, orderedSubIds) => {
+    // Assign temporary sortable wbs so reWBS produces the right order
+    const parentAct = activities.find((a) => a.id === parentId);
+    if (!parentAct) return;
+    const updated = activities.map((a) => {
+      const pos = orderedSubIds.indexOf(a.id);
+      if (pos === -1) return a;
+      // Use index+1 as wbs suffix so reWBS sort preserves this order
+      return { ...a, wbs: `${parentAct.wbs}.${pos + 1}` };
+    });
+    const renumbered = reWBS(updated, parentAct.projectId);
+    const batch = writeBatch(db);
+    renumbered
+      .filter((a) => a.projectId === parentAct.projectId)
       .forEach((a) => batch.set(doc(activitiesCol(), a.id), a));
     await batch.commit();
   }, [activities]);
@@ -210,6 +247,7 @@ export function AppProvider({ children }) {
     addActivity,
     updateActivity,
     deleteActivity,
+    reorderSubActivities,
     setProjectActivities,
     getProjectActivities,
     loading,
@@ -276,20 +314,28 @@ function rollUpParent(allActivities, parentId) {
   const children = allActivities.filter((a) => a.parentId === parentId);
   if (children.length === 0) return allActivities;
 
-  const planStarts = children.map((c) => c.planStart).filter(Boolean).sort();
-  const planFinishes = children.map((c) => c.planFinish).filter(Boolean).sort();
-  const actualStarts = children.map((c) => c.actualStart).filter(Boolean).sort();
+  const planStarts    = children.map((c) => c.planStart).filter(Boolean).sort();
+  const planFinishes  = children.map((c) => c.planFinish).filter(Boolean).sort();
+  const actualStarts  = children.map((c) => c.actualStart).filter(Boolean).sort();
   const actualFinishes = children.map((c) => c.actualFinish).filter(Boolean).sort();
-
   const allActualFinished = children.every((c) => c.actualFinish);
+
+  // Weight roll-up: effectiveWeight = baseWeight × (sum of sub weights / 100)
+  // baseWeight is the weight the user originally set on the main activity before any sub was added.
+  // We store it as `baseWeight` on the parent; fall back to current weight if not set.
+  const sumSubWeights = +children.reduce((s, c) => s + (c.weight || 0), 0).toFixed(4);
 
   const updated = allActivities.map((a) => {
     if (a.id !== parentId) return a;
+    const base = a.baseWeight !== undefined ? a.baseWeight : a.weight;
+    const effectiveWeight = +(base * (sumSubWeights / 100)).toFixed(4);
     return {
       ...a,
-      planStart: planStarts[0] ?? a.planStart,
-      planFinish: planFinishes[planFinishes.length - 1] ?? a.planFinish,
-      actualStart: actualStarts[0] ?? a.actualStart,
+      baseWeight:   base,
+      weight:       effectiveWeight,
+      planStart:    planStarts[0] ?? a.planStart,
+      planFinish:   planFinishes[planFinishes.length - 1] ?? a.planFinish,
+      actualStart:  actualStarts[0] ?? a.actualStart,
       actualFinish: allActualFinished
         ? actualFinishes[actualFinishes.length - 1]
         : null,
