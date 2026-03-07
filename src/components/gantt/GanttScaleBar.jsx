@@ -1,4 +1,4 @@
-import { CalendarDays, CalendarRange, Calendar, CalendarClock, Printer, TrendingUp } from 'lucide-react';
+import { CalendarDays, CalendarRange, Calendar, CalendarClock, Printer, TrendingUp, Plus } from 'lucide-react';
 
 const SCALES = [
   { key: 'weeks',  label: 'สัปดาห์', Icon: CalendarDays },
@@ -8,16 +8,30 @@ const SCALES = [
 
 export default function GanttScaleBar({
   scale, onScale, projectName,
+  hasNoActivities, onAddMain,
   showLookahead, onToggleLookahead,
   showSCurve, onToggleSCurve,
   onPrint,
 }) {
   return (
     <div className="no-print flex items-center gap-2 px-4 py-2 bg-industrial-800 border-b border-industrial-600">
-      {/* Project name */}
+      {/* Project name + ปุ่ม + รายการ Main เมื่อยังไม่มี Activity */}
       <span className="text-xs font-semibold text-industrial-300 truncate max-w-[180px] hidden sm:block">
         {projectName}
       </span>
+      {hasNoActivities && onAddMain && (
+        <button
+          type="button"
+          onClick={onAddMain}
+          title="เพิ่มรายการ Main Activity แรก"
+          className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium
+                     bg-accent-600/30 text-accent-400 border border-accent-600/50
+                     hover:bg-accent-600/60 hover:text-white transition-colors"
+        >
+          <Plus size={12} />
+          รายการ Main
+        </button>
+      )}
 
       <div className="flex-1" />
 

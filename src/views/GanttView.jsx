@@ -235,6 +235,8 @@ export default function GanttView() {
           scale={scale}
           onScale={setScale}
           projectName={selectedProject.name}
+          hasNoActivities={projectActivities.length === 0}
+          onAddMain={handleAddMain}
           showSCurve={showSCurve}
           onToggleSCurve={() => setShowSCurve((v) => !v)}
           showLookahead={showLookahead}
