@@ -45,6 +45,29 @@ export default function GanttTable({
   // ── Weight editor state for Main Activities ─────────────────────────────
   const [weightEditor, setWeightEditor] = useState(null);
 
+  // ── Inline name edit (Main + Sub) ───────────────────────────────────────
+  const [editingNameId, setEditingNameId] = useState(null);
+  const [editingNameValue, setEditingNameValue] = useState('');
+
+  function startEditName(row) {
+    setEditingNameId(row.id);
+    setEditingNameValue(row.name || '');
+  }
+
+  function saveEditName() {
+    if (editingNameId && onUpdate) {
+      const trimmed = (editingNameValue || '').trim();
+      onUpdate(editingNameId, { name: trimmed });
+    }
+    setEditingNameId(null);
+    setEditingNameValue('');
+  }
+
+  function cancelEditName() {
+    setEditingNameId(null);
+    setEditingNameValue('');
+  }
+
   function startResize(colKey, e) {
     e.preventDefault();
     e.stopPropagation();
@@ -254,10 +277,11 @@ export default function GanttTable({
                 {row.wbs}
               </div>
 
-              {/* Name */}
+              {/* Name — คลิกเพื่อแก้ไขได้ (Main + Sub) */}
               <div 
-                className="shrink-0 flex items-center gap-1 pr-1"
+                className="shrink-0 flex items-center gap-1 pr-1 min-w-0"
                 style={{ width: colWidths.name }}
+                onClick={(e) => e.stopPropagation()}
               >
                 {/* Drag handle for sub rows */}
                 {!isMain ? (
@@ -281,22 +305,57 @@ export default function GanttTable({
                 ) : (
                   <span className="shrink-0" style={{ width: 13 }} />
                 )}
-                <span
-                  className={`flex-1 truncate text-xs leading-tight ${isMain ? 'font-semibold text-white' : 'text-industrial-200'}`}
-                  title={row.name}
-                  style={{ 
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    maxWidth: '100%'
-                  }}
-                >
-                  {row.name}
-                </span>
-                <Pencil
-                  size={10}
-                  className="shrink-0 text-industrial-500 opacity-0 group-hover:opacity-100 transition-opacity ml-1"
-                />
+                {editingNameId === row.id ? (
+                  <>
+                    <input
+                      type="text"
+                      className="flex-1 min-w-0 bg-industrial-700 border border-accent-500 rounded px-1.5 py-0.5 text-xs text-industrial-100 focus:outline-none focus:ring-1 focus:ring-accent-500"
+                      value={editingNameValue}
+                      onChange={(e) => setEditingNameValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); saveEditName(); }
+                        if (e.key === 'Escape') { e.preventDefault(); cancelEditName(); }
+                      }}
+                      autoFocus
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); saveEditName(); }}
+                      className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent-600 text-white hover:bg-accent-500 transition-colors inline-flex items-center gap-0.5"
+                      title="บันทึก"
+                    >
+                      <Save size={10} />
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); cancelEditName(); }}
+                      className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-medium text-industrial-400 hover:text-white hover:bg-industrial-600 transition-colors"
+                      title="ยกเลิก"
+                    >
+                      ยกเลิก
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <span
+                      className={`flex-1 min-w-0 truncate text-xs leading-tight block ${isMain ? 'font-semibold text-white' : 'text-industrial-200'}`}
+                      title={row.name || '—'}
+                      style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '100%' }}
+                    >
+                      {row.name || '—'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); startEditName(row); }}
+                      className="shrink-0 p-0.5 rounded text-industrial-500 hover:text-accent-400 hover:bg-industrial-700/50 transition-colors"
+                      title="แก้ไขชื่องาน"
+                    >
+                      <Pencil size={10} />
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Weight */}
