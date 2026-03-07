@@ -162,14 +162,15 @@ export default function GanttTable({
 
   function saveWeight() {
     if (!weightEditor || !onUpdate) return;
+    const val = Number(weightEditor.mainweight) || 0;
     onUpdate(weightEditor.id, {
-      mainweight: Number(weightEditor.mainweight) || 0,
+      mainweight: Math.round(val * 100) / 100,
     });
     setWeightEditor(null);
   }
 
   return (
-    <div className="shrink-0 border-r-2 border-industrial-600 flex flex-col select-none overflow-hidden" style={{ minWidth: 520 }}>
+    <div className="shrink-0 border-r-2 border-industrial-600 flex flex-col select-none overflow-hidden" style={{ minWidth: 'min-content' }}>
 
       {/* ── Column Header ──────────────────────────────────────────── */}
       <div
@@ -315,7 +316,7 @@ export default function GanttTable({
                     title="กดเพื่อตั้งค่า Main Weight"
                   >
                     <div className="flex items-center justify-between gap-1">
-                      <span className="font-mono text-[10px]">{(+row.weight).toFixed(1)}%</span>
+                      <span className="font-mono text-[10px]">{(+row.weight).toFixed(2)}%</span>
                       <span className="text-[8px] text-industrial-500">Set</span>
                     </div>
                   </button>
@@ -328,7 +329,7 @@ export default function GanttTable({
                       value={row.weight ?? ''}
                       min={0}
                       max={100}
-                      step={0.1}
+                      step={0.01}
                       onClick={(e) => e.stopPropagation()}
                       onMouseDown={(e) => e.stopPropagation()}
                       onChange={(e) => {
@@ -336,7 +337,8 @@ export default function GanttTable({
                         const v = e.target.value;
                         const num = v === '' ? 0 : Number(v);
                         if (Number.isNaN(num)) return;
-                        onUpdate(row.id, { weight: num });
+                        const rounded = Math.round(num * 100) / 100;
+                        onUpdate(row.id, { weight: rounded });
                       }}
                     />
                     <span className="text-[10px] text-industrial-400 shrink-0">%</span>
@@ -468,7 +470,7 @@ export default function GanttTable({
                     value={weightEditor.mainweight}
                     min={0}
                     max={100}
-                    step={0.1}
+                    step={0.01}
                     onChange={(e) => updateWeightField(e.target.value)}
                     autoFocus
                   />

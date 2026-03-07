@@ -26,10 +26,36 @@ export default function GanttView() {
   // ── Delete confirm state ───────────────────────────────────────────────
   const [deleteTarget, setDeleteTarget] = useState(null); // row to delete
 
-  // ── Single scroll container ref (replaces two-pane sync) ───────────────
   const scrollContainerRef = useRef(null);
-  const timelineContainerRef = useRef(null);
   const [timelineWidth, setTimelineWidth] = useState(0);
+
+  // ── Splitter state ─────────────────────────────────────────────────────
+  const [tableWidth, setTableWidth] = useState(520);
+  const isResizing = useRef(false);
+
+  const startResizeSplitter = useCallback((e) => {
+    e.preventDefault();
+    isResizing.current = true;
+    document.body.style.cursor = 'col-resize';
+
+    function onMove(ev) {
+      if (!isResizing.current) return;
+      const newWidth = Math.max(300, Math.min(ev.clientX, window.innerWidth - 100));
+      setTableWidth(newWidth);
+    }
+
+    function onUp() {
+      if (isResizing.current) {
+        isResizing.current = false;
+        document.body.style.cursor = 'default';
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+      }
+    }
+
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, []);
 
   // ── Collapse toggle ────────────────────────────────────────────────────
   const toggleCollapse = useCallback((id) => {
@@ -116,19 +142,22 @@ export default function GanttView() {
     reorderSubActivities(parentId, orderedSubIds);
   }, [reorderSubActivities]);
 
-  // ── Timeline width measurement ────────────────────────────────────────
+  const RESIZER_WIDTH = 8;
+  const HEADER_HEIGHT = 56;
+
+  // ── Timeline width = พื้นที่ฝั่งขวาหลังตารางและเส้นแบ่ง ─────────────────
   useEffect(() => {
     const updateTimelineWidth = () => {
-      if (timelineContainerRef.current) {
-        const rect = timelineContainerRef.current.getBoundingClientRect();
-        setTimelineWidth(rect.width);
+      if (scrollContainerRef.current) {
+        const w = scrollContainerRef.current.getBoundingClientRect().width;
+        setTimelineWidth(Math.max(0, w - tableWidth - RESIZER_WIDTH));
       }
     };
 
     updateTimelineWidth();
     window.addEventListener('resize', updateTimelineWidth);
     return () => window.removeEventListener('resize', updateTimelineWidth);
-  }, []);
+  }, [tableWidth, rows.length]);
 
   // ── Timeline math ──────────────────────────────────────────────────────
   const timeline = useGanttTimeline(projectActivities, scale, timelineWidth);
@@ -249,51 +278,76 @@ export default function GanttView() {
         ) : (
           <div className="flex flex-col flex-1 min-h-0">
 
-            {/* ── Split layout: fixed table + scrollable timeline ── */}
-            <div className="flex flex-1 min-h-0">
-              {/* Fixed left table */}
-              <div
-                className="shrink-0 bg-industrial-900"
-                style={{ width: 'clamp(520px, 35vw, 700px)' }}
-              >
-                <div className="overflow-y-auto h-full">
-                  <GanttTable
-                    rows={rows}
-                    collapsed={collapsed}
-                    onToggle={toggleCollapse}
-                    onUpdate={handleUpdate}
-                    onAddMain={handleAddMain}
-                    onAddSub={handleAddSub}
-                    onDelete={handleDeleteRequest}
-                    onReorder={handleReorder}
-                    weightTotal={weightTotal}
-                    ROW_H={ROW_HEIGHT}
-                  />
-                </div>
-              </div>
-
-              {/* Scrollable timeline */}
-              <div ref={timelineContainerRef} className="flex-1 min-w-0">
-                <div ref={scrollContainerRef} className="overflow-auto h-full">
-                  {projectActivities.length > 0 ? (
-                    <GanttTimeline
-                      columns={timeline.columns}
-                      totalWidth={timeline.totalWidth}
-                      rows={rows}
-                      ROW_H={ROW_HEIGHT}
-                      scale={scale}
-                      dateToX={timeline.dateToX}
-                      spanToWidth={timeline.spanToWidth}
-                      pxPerDay={timeline.pxPerDay}
-                      onUpdate={handleUpdate}
-                    />
-                  ) : (
-                    <div className="flex items-center justify-center h-32 text-xs text-industrial-500">
-                      ยังไม่มีกิจกรรม — กดปุ่ม +Main เพื่อเริ่มต้น
+            {/* ── Single scroll: ตาราง + Gantt เลื่อนแนวตั้งด้วยกัน (แถวไม่เหลื่อม) ── */}
+            <div
+              ref={scrollContainerRef}
+              className="flex-1 min-w-0 overflow-auto bg-industrial-900"
+            >
+              {projectActivities.length > 0 ? (
+                <div
+                  className="flex flex-col"
+                  style={{
+                    width: tableWidth + RESIZER_WIDTH + timeline.totalWidth,
+                    minHeight: '100%',
+                    height: HEADER_HEIGHT + rows.length * ROW_HEIGHT,
+                  }}
+                >
+                  <div className="flex shrink-0" style={{ minHeight: HEADER_HEIGHT + rows.length * ROW_HEIGHT }}>
+                    {/* ตารางซ้าย — sticky เวลา scroll แนวนอน */}
+                    <div
+                      className="shrink-0 bg-industrial-900"
+                      style={{
+                        position: 'sticky',
+                        left: 0,
+                        zIndex: 10,
+                        width: tableWidth,
+                      }}
+                    >
+                      <GanttTable
+                        rows={rows}
+                        collapsed={collapsed}
+                        onToggle={toggleCollapse}
+                        onUpdate={handleUpdate}
+                        onAddMain={handleAddMain}
+                        onAddSub={handleAddSub}
+                        onDelete={handleDeleteRequest}
+                        onReorder={handleReorder}
+                        weightTotal={weightTotal}
+                        ROW_H={ROW_HEIGHT}
+                      />
                     </div>
-                  )}
+                    {/* เส้นแบ่งลากย่อ/ขยาย */}
+                    <div
+                      className="shrink-0 bg-industrial-700/50 hover:bg-accent-500 cursor-col-resize transition-colors z-20"
+                      style={{
+                        position: 'sticky',
+                        left: tableWidth,
+                        width: RESIZER_WIDTH,
+                        minHeight: HEADER_HEIGHT + rows.length * ROW_HEIGHT,
+                      }}
+                      onMouseDown={startResizeSplitter}
+                    />
+                    {/* Gantt timeline */}
+                    <div className="shrink-0" style={{ width: timeline.totalWidth }}>
+                      <GanttTimeline
+                        columns={timeline.columns}
+                        totalWidth={timeline.totalWidth}
+                        rows={rows}
+                        ROW_H={ROW_HEIGHT}
+                        scale={scale}
+                        dateToX={timeline.dateToX}
+                        spanToWidth={timeline.spanToWidth}
+                        pxPerDay={timeline.pxPerDay}
+                        onUpdate={handleUpdate}
+                      />
+                    </div>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                <div className="flex items-center justify-center h-32 text-xs text-industrial-500">
+                  ยังไม่มีกิจกรรม — กดปุ่ม +Main เพื่อเริ่มต้น
+                </div>
+              )}
             </div>
 
             {/* S-Curve Chart */}

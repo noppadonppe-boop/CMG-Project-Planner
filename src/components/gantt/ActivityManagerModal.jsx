@@ -27,10 +27,11 @@ export default function ActivityManagerModal({
 
   if (!isOpen) return null;
 
-  const remaining = +(100 - totalWeight).toFixed(2);
+  const isMain = mode === 'main';
+  const remaining = isMain ? +(100 - totalWeight).toFixed(2) : null;
   const preview   = +form.weight || 0;
-  const newTotal  = +(totalWeight + preview).toFixed(2);
-  const overBudget = newTotal > 100;
+  const newTotal  = isMain ? +(totalWeight + preview).toFixed(2) : preview;
+  const overBudget = isMain ? newTotal > 100 : preview > 100;
 
   function set(field, value) {
     setForm((p) => ({ ...p, [field]: value }));
@@ -41,8 +42,9 @@ export default function ActivityManagerModal({
     const e = {};
     if (!form.name.trim()) e.name = 'กรุณาระบุชื่องาน';
     const wt = Number(form.weight);
-    if (form.weight === '' || isNaN(wt) || wt <= 0) e.weight = 'ระบุ % Weight > 0';
-    else if (wt > 100) e.weight = 'ไม่เกิน 100%';
+    if (form.weight === '' || isNaN(wt)) e.weight = 'กรุณาระบุ % Weight';
+    else if (wt < 0 || wt > 100) e.weight = 'ระบุ 0–100%';
+    else if (isMain && wt <= 0) e.weight = 'ระบุ % Weight > 0';
     if (!form.planStart)  e.planStart  = 'กรุณาระบุวันเริ่มแผน';
     if (!form.planFinish) e.planFinish = 'กรุณาระบุวันเสร็จแผน';
     if (form.planStart && form.planFinish && form.planFinish < form.planStart)
@@ -69,8 +71,6 @@ export default function ActivityManagerModal({
     setErrors({});
     onClose();
   }
-
-  const isMain = mode === 'main';
 
   return (
     <div
@@ -117,42 +117,49 @@ export default function ActivityManagerModal({
           <div>
             <label className="block text-[10px] font-semibold text-industrial-400 uppercase tracking-wider mb-1 flex items-center justify-between">
               <span>% น้ำหนักงาน (Weight) *</span>
-              <span className={`text-[10px] font-mono ${remaining <= 0 ? 'text-red-400' : 'text-green-400'}`}>
-                เหลือได้: {remaining}%
-              </span>
+              {isMain && (
+                <span className={`text-[10px] font-mono ${remaining <= 0 ? 'text-red-400' : 'text-green-400'}`}>
+                  เหลือได้: {remaining}%
+                </span>
+              )}
             </label>
             <input
               type="number"
               value={form.weight}
-              min={0.1} max={100} step={0.1}
+              min={0} max={100} step={0.01}
               onChange={(e) => set('weight', e.target.value)}
-              placeholder={`แนะนำ ≤ ${remaining}%`}
+              placeholder={isMain ? `แนะนำ ≤ ${remaining}%` : '0–100'}
               className={`w-full bg-industrial-700 border ${errors.weight ? 'border-red-500' : 'border-industrial-600'}
                 text-industrial-100 text-xs rounded px-3 py-2 focus:outline-none focus:border-accent-500 transition-colors`}
             />
             {errors.weight && <Err msg={errors.weight} />}
+            {!isMain && (
+              <p className="text-[10px] text-industrial-500 mt-1">น้ำหนัก Sub ไม่นำไปคำนวณ Weight รวมของโครงการ — ใส่ 0–100 ได้ตามต้องการ</p>
+            )}
 
-            {/* Live weight meter */}
-            <div className="mt-2">
-              <div className="flex items-center justify-between text-[10px] mb-1">
-                <span className="text-industrial-400">รวมหลังเพิ่ม</span>
-                <span className={`font-mono font-bold ${overBudget ? 'text-red-400' : newTotal === 100 ? 'text-green-400' : 'text-yellow-400'}`}>
-                  {newTotal}% / 100%
-                </span>
+            {/* Live weight meter — Main เท่านั้น */}
+            {isMain && (
+              <div className="mt-2">
+                <div className="flex items-center justify-between text-[10px] mb-1">
+                  <span className="text-industrial-400">รวมหลังเพิ่ม</span>
+                  <span className={`font-mono font-bold ${overBudget ? 'text-red-400' : newTotal === 100 ? 'text-green-400' : 'text-yellow-400'}`}>
+                    {newTotal}% / 100%
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-industrial-700 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${overBudget ? 'bg-red-500' : newTotal === 100 ? 'bg-green-500' : 'bg-accent-500'}`}
+                    style={{ width: `${Math.min(100, newTotal)}%` }}
+                  />
+                </div>
+                {overBudget && (
+                  <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1">
+                    <AlertCircle size={9} />
+                    เกิน 100% — รวมจะเท่ากับ {newTotal}% กรุณาลดค่า Weight
+                  </p>
+                )}
               </div>
-              <div className="w-full h-2 bg-industrial-700 rounded-full overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all ${overBudget ? 'bg-red-500' : newTotal === 100 ? 'bg-green-500' : 'bg-accent-500'}`}
-                  style={{ width: `${Math.min(100, newTotal)}%` }}
-                />
-              </div>
-              {overBudget && (
-                <p className="text-[10px] text-red-400 mt-1 flex items-center gap-1">
-                  <AlertCircle size={9} />
-                  เกิน 100% — รวมจะเท่ากับ {newTotal}% กรุณาลดค่า Weight
-                </p>
-              )}
-            </div>
+            )}
           </div>
 
           {/* Plan dates */}
