@@ -24,12 +24,10 @@ export function useSCurve(activities, scale = 'months') {
     const empty = { data: [], totalWeight: 0, todayLabel: null };
     if (!activities || activities.length === 0) return empty;
 
-    // Identify parent ids so we can exclude them
-    const parentIds = new Set(
-      activities.filter((a) => a.parentId).map((a) => a.parentId)
-    );
-    const leaves = activities.filter((a) => !parentIds.has(a.id));
-    if (leaves.length === 0) return empty;
+    // Use same logic as GanttView: only main activities (no parentId) contribute
+    // Child activities roll up to their parents, we don't count them separately
+    const mainActivities = activities.filter((a) => !a.parentId);
+    if (mainActivities.length === 0) return empty;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -49,12 +47,12 @@ export function useSCurve(activities, scale = 'months') {
 
     // Float64 daily increment arrays
     const planDay   = new Float64Array(totalDays);
-    const actualDay = new Float64Array(totalDays);
+    const actualByDate = new Map(); // เก็บ earned value ตามวันที่รายงาน
 
-    const totalWeight = leaves.reduce((s, a) => s + (Number(a.weight) || 0), 0);
+    const totalWeight = mainActivities.reduce((s, a) => s + (Number(a.weight) || 0), 0);
     if (totalWeight === 0) return empty;
 
-    leaves.forEach((a) => {
+    mainActivities.forEach((a) => {
       const w = Number(a.weight) || 0;
       if (w === 0) return;
 
@@ -70,19 +68,22 @@ export function useSCurve(activities, scale = 'months') {
         }
       }
 
-      // Actual spread — earned value = weight × (progress/100)
-      const aS = safeISO(a.actualStart);
-      if (aS) {
-        const earned = w * ((Number(a.progress) || 0) / 100);
-        if (earned === 0) return;
-        const rawEnd = safeISO(a.actualFinish) ?? today;
-        const aF     = rawEnd > today ? today : rawEnd;
-        if (aF < aS) return;
-        const span = differenceInCalendarDays(aF, aS) + 1;
-        const inc  = earned / span;
-        for (let i = 0; i < span; i++) {
-          const idx = differenceInCalendarDays(addDays(aS, i), tlStart);
-          if (idx >= 0 && idx < totalDays) actualDay[idx] += inc;
+      // Actual — วิธีที่ 1: บันทึก earned value ทั้งหมดในวันที่รายงาน
+      const progressVal = Number(a.progress) || 0;
+      if (progressVal > 0) {
+        const earned = w * (progressVal / 100);
+
+        // หาวันที่รายงาน: ใช้ actualFinish หรือ today
+        let reportDate = safeISO(a.actualFinish);
+        if (!reportDate || reportDate > today) {
+          reportDate = today;
+        }
+
+        // ตรวจสอบว่าอยู่ใน timeline
+        if (reportDate >= tlStart && reportDate <= tlEnd) {
+          const dateKey = format(reportDate, 'yyyy-MM-dd');
+          const current = actualByDate.get(dateKey) || 0;
+          actualByDate.set(dateKey, current + earned);
         }
       }
     });
@@ -92,7 +93,9 @@ export function useSCurve(activities, scale = 'months') {
     const daily = [];
     for (let i = 0; i < totalDays; i++) {
       cumPlan   += planDay[i];
-      cumActual += actualDay[i];
+      const dateKey = format(addDays(tlStart, i), 'yyyy-MM-dd');
+      const earnedToday = actualByDate.get(dateKey) || 0;
+      cumActual += earnedToday;
       daily.push({
         date:   addDays(tlStart, i),
         plan:   cumPlan,
