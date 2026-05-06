@@ -24,10 +24,10 @@ export function useSCurve(activities, scale = 'months') {
     const empty = { data: [], totalWeight: 0, todayLabel: null };
     if (!activities || activities.length === 0) return empty;
 
-    // Use same logic as GanttView: only main activities (no parentId) contribute
-    // Child activities roll up to their parents, we don't count them separately
-    const mainActivities = activities.filter((a) => !a.parentId);
-    if (mainActivities.length === 0) return empty;
+    // Use all activities that have weight (both main and children)
+    // Each activity's progress contributes independently to S-Curve
+    const weightedActivities = activities.filter((a) => Number(a.weight) > 0);
+    if (weightedActivities.length === 0) return empty;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -49,10 +49,10 @@ export function useSCurve(activities, scale = 'months') {
     const planDay   = new Float64Array(totalDays);
     const actualByDate = new Map(); // เก็บ earned value ตามวันที่รายงาน
 
-    const totalWeight = mainActivities.reduce((s, a) => s + (Number(a.weight) || 0), 0);
+    const totalWeight = weightedActivities.reduce((s, a) => s + (Number(a.weight) || 0), 0);
     if (totalWeight === 0) return empty;
 
-    mainActivities.forEach((a) => {
+    weightedActivities.forEach((a) => {
       const w = Number(a.weight) || 0;
       if (w === 0) return;
 
@@ -69,18 +69,24 @@ export function useSCurve(activities, scale = 'months') {
       }
 
       // Actual — วิธีที่ 1: บันทึก earned value ทั้งหมดในวันที่รายงาน
-      const progressVal = Number(a.progress) || 0;
+      // รองรับทั้ง number และ string (เช่น "10" หรือ 10)
+      const rawProgress = a.progress ?? a.actualProgress ?? 0;
+      const progressVal = parseFloat(String(rawProgress).replace('%', '')) || 0;
       if (progressVal > 0) {
         const earned = w * (progressVal / 100);
 
-        // หาวันที่รายงาน: ใช้ actualFinish หรือ today
+        // หาวันที่รายงาน: ลำดับความสำคัญ actualFinish > actualStart > today
         let reportDate = safeISO(a.actualFinish);
         if (!reportDate || reportDate > today) {
-          reportDate = today;
+          // ถ้าไม่มี actualFinish หรืออยู่ในอนาคต ใช้ actualStart (ถ้ามี) หรือ today
+          const aStart = safeISO(a.actualStart);
+          reportDate = aStart && aStart <= today ? aStart : today;
         }
 
-        // ตรวจสอบว่าอยู่ใน timeline
-        if (reportDate >= tlStart && reportDate <= tlEnd) {
+        // ตรวจสอบว่าอยู่ใน timeline (ขยายขอบเขตให้รองรับ today ที่อาจนอกช่วงแผน)
+        const extendedStart = min([tlStart, today]);
+        const extendedEnd = max([tlEnd, today]);
+        if (reportDate >= extendedStart && reportDate <= extendedEnd) {
           const dateKey = format(reportDate, 'yyyy-MM-dd');
           const current = actualByDate.get(dateKey) || 0;
           actualByDate.set(dateKey, current + earned);
