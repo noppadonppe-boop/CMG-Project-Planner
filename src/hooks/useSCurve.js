@@ -15,22 +15,60 @@ function safeISO(s) {
 /**
  * Computes S-Curve data points for recharts.
  *
- * Only LEAF activities (no children) contribute — parents are roll-ups.
- * Weight is distributed linearly across each day of the planned/actual span.
- * Returns bucketed data (monthly or weekly) with cumulative Plan% and Actual%.
+ * Weight structure:
+ *  - Main activity (no parentId): a.weight = absolute % of total project (sums to 100)
+ *  - Sub activity (has parentId):  a.weight = relative % within parent (designed to sum ~100)
+ *    → absolute weight = parent.mainweight × (child.weight / sumSiblingWeights)
+ *
+ * Only LEAF activities (no children) contribute to the timeline spread.
+ * totalWeight = sum of main activities' weights (same as GanttView banner).
  */
 export function useSCurve(activities, scale = 'months') {
   return useMemo(() => {
     const empty = { data: [], totalWeight: 0, todayLabel: null };
     if (!activities || activities.length === 0) return empty;
 
-    // Use all activities that have weight (both main and children)
-    // Each activity's progress contributes independently to S-Curve
-    const weightedActivities = activities.filter((a) => Number(a.weight) > 0);
-    if (weightedActivities.length === 0) return empty;
-
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Build parent lookup and sibling-weight sums
+    const activityMap = new Map(activities.map((a) => [a.id, a]));
+    const siblingWeightSumMap = new Map(); // parentId → sum of children's weight
+    activities.forEach((a) => {
+      if (a.parentId) {
+        siblingWeightSumMap.set(
+          a.parentId,
+          (siblingWeightSumMap.get(a.parentId) || 0) + (Number(a.weight) || 0)
+        );
+      }
+    });
+
+    // Identify parent ids (activities that have at least one child)
+    const parentIdSet = new Set(activities.filter((a) => a.parentId).map((a) => a.parentId));
+
+    // Leaf activities = activities that are NOT a parent of anyone
+    const leaves = activities.filter((a) => !parentIdSet.has(a.id));
+    if (leaves.length === 0) return empty;
+
+    // totalWeight = sum of main activities' weight (absolute %, consistent with GanttView)
+    const mainActivities = activities.filter((a) => !a.parentId);
+    const totalWeight = mainActivities.reduce((s, a) => s + (Number(a.weight) || 0), 0);
+    if (totalWeight === 0) return empty;
+
+    /**
+     * Compute absolute project weight for any activity.
+     * - Main (no parentId): weight is already absolute
+     * - Sub (has parentId): absolute = parent.mainweight × (this.weight / siblingSum)
+     */
+    function getAbsoluteWeight(a) {
+      if (!a.parentId) return Number(a.weight) || 0;
+      const parent = activityMap.get(a.parentId);
+      if (!parent) return 0;
+      const sibSum = siblingWeightSumMap.get(a.parentId) || 0;
+      if (sibSum === 0) return 0;
+      const parentMain = Number(parent.mainweight ?? parent.weight) || 0;
+      return parentMain * (Number(a.weight) / sibSum);
+    }
 
     // Collect all relevant dates for timeline bounds
     const allDates = activities.flatMap((a) =>
@@ -46,17 +84,14 @@ export function useSCurve(activities, scale = 'months') {
     const totalDays = differenceInCalendarDays(tlEnd, tlStart) + 1;
 
     // Float64 daily increment arrays
-    const planDay   = new Float64Array(totalDays);
+    const planDay      = new Float64Array(totalDays);
     const actualByDate = new Map(); // เก็บ earned value ตามวันที่รายงาน
 
-    const totalWeight = weightedActivities.reduce((s, a) => s + (Number(a.weight) || 0), 0);
-    if (totalWeight === 0) return empty;
-
-    weightedActivities.forEach((a) => {
-      const w = Number(a.weight) || 0;
+    leaves.forEach((a) => {
+      const w = getAbsoluteWeight(a); // absolute project weight
       if (w === 0) return;
 
-      // Plan spread
+      // ── Plan spread ─────────────────────────────────────────────────────
       const pS = safeISO(a.planStart);
       const pF = safeISO(a.planFinish);
       if (pS && pF && pF >= pS) {
@@ -68,28 +103,25 @@ export function useSCurve(activities, scale = 'months') {
         }
       }
 
-      // Actual — วิธีที่ 1: บันทึก earned value ทั้งหมดในวันที่รายงาน
-      // รองรับทั้ง number และ string (เช่น "10" หรือ 10)
+      // ── Actual: บันทึก earned value ทั้งหมดในวันที่รายงาน ───────────────
       const rawProgress = a.progress ?? a.actualProgress ?? 0;
       const progressVal = parseFloat(String(rawProgress).replace('%', '')) || 0;
       if (progressVal > 0) {
         const earned = w * (progressVal / 100);
 
-        // หาวันที่รายงาน: ลำดับความสำคัญ actualFinish > actualStart > today
+        // ลำดับความสำคัญ: actualFinish (ถ้าไม่เกิน today) > actualStart > today
         let reportDate = safeISO(a.actualFinish);
         if (!reportDate || reportDate > today) {
-          // ถ้าไม่มี actualFinish หรืออยู่ในอนาคต ใช้ actualStart (ถ้ามี) หรือ today
           const aStart = safeISO(a.actualStart);
           reportDate = aStart && aStart <= today ? aStart : today;
         }
 
-        // ตรวจสอบว่าอยู่ใน timeline (ขยายขอบเขตให้รองรับ today ที่อาจนอกช่วงแผน)
-        const extendedStart = min([tlStart, today]);
-        const extendedEnd = max([tlEnd, today]);
-        if (reportDate >= extendedStart && reportDate <= extendedEnd) {
+        // ขยายขอบเขตให้รองรับ today ที่อาจนอกช่วงแผน
+        const extStart = min([tlStart, today]);
+        const extEnd   = max([tlEnd, today]);
+        if (reportDate >= extStart && reportDate <= extEnd) {
           const dateKey = format(reportDate, 'yyyy-MM-dd');
-          const current = actualByDate.get(dateKey) || 0;
-          actualByDate.set(dateKey, current + earned);
+          actualByDate.set(dateKey, (actualByDate.get(dateKey) || 0) + earned);
         }
       }
     });
